@@ -1,7 +1,8 @@
 import mqtt from "mqtt";
+import { receiveMessage } from "./receiveMessage";
 export enum MessageType{
     CAPTURE_FLAG = "capture_flag",
-    CONFIRMATION_CAPTURE_FLAG = "conf_capture_flag",
+    CONFIG_FLAG = "conf_capture_flag",
     RESET_FLAG = "reset_flag"
 
 }
@@ -26,13 +27,11 @@ function MQTTManagers(){
         }
         console.log("Connected")
     })
-    client.on("message",(topic,message) => {
-        console.log(topic)
-        console.log(message.toString())
-    })
     client.on("error",(err) => {
         console.error(err)
     })
+    receiveMessage(client)
     
 }
+
 export default MQTTManagers
