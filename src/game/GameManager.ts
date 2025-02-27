@@ -2,6 +2,7 @@ import { MqttClient } from "mqtt";
 import { sendConfigGame, sendStartingGame } from "../mqtt/sendMessage";
 import {isHexColor,isInFlags} from "../utils/Utils";
 import initConnexion, { CaptureFlag, ConfigCaptureFlag, OrderType } from "../mqtt/mqttManager";
+import { broadcastMessage } from "../request/GameWebSocket";
 export enum StateGame{
     INIT,IDLE,PLAY,END
 }
@@ -69,7 +70,15 @@ export class GameManager{
         this.stateGame = StateGame.PLAY
         this.scoringInterval =setInterval(() => {
             this.scoring()
+            this.gameData.config.time += 1*1000
+            broadcastMessage("timer",Number(this.gameData.config.time))
+            broadcastMessage("flags",this.gameData.flags.map((v) => ({
+                id_flag: v.id_flag,
+                flagState : Number(v.flagState),
+                capture_team : String(v.capture_team)
+            })))
         },1000)
+        return true
     }
 
     endGame():TeamsType[]{
@@ -78,9 +87,18 @@ export class GameManager{
         return []
     }
     getScore():Map<string,number>{
+        const teamSocket = ["scoreBleu","scoreRouge"]
         const scoreMap = new Map<string,number>()
         this.gameData.teams.forEach(team => {
             scoreMap.set(team.id_team,team.score)
+            if(this.gameData.teams.length <=2){
+                if(team.id_team === "0"){
+                    broadcastMessage(teamSocket[0],team.score)
+                }else{
+                    broadcastMessage(teamSocket[1],team.score)
+                }
+            }
+
         });
         return scoreMap
     }
@@ -136,12 +154,10 @@ export class GameManager{
         if(isInFlags(this.gameData.flags,message.flagId) && this.stateGame == StateGame.PLAY){
             const flag = this.gameData.flags.find((v) => v.id_flag == message.flagId)
             if(!flag) return
-            console.log(`${flag.capture_team} + ${message.teamId}`)
-            console.log(this.gameData.config.capture_cooldown)
             if(flag.capture_team || flag.capture_team != message.teamId){
                 flag.flagState = FlagState.INPROGRESS
                 flag.refTimeout =setTimeout(()=>{
-                    console.log("Flag "+message.flagId+" captured by"+message.teamId)
+                    console.log("Flag "+message.flagId+" captured by "+message.teamId)
                     const complete:CaptureFlag = {
                         flagId : message.flagId,
                         teamId : message.teamId,
@@ -149,7 +165,7 @@ export class GameManager{
                     }
                     const flagIndex = this.gameData.flags.findIndex((v) => v.id_flag == message.flagId);
                     if (flagIndex !== -1) {
-                        this.gameData.flags[flagIndex].capture_team = complete.teamId
+                        this.gameData.flags[flagIndex].capture_team = String(complete.teamId)
                         this.gameData.flags[flagIndex].flagState = FlagState.CAPTURED
                     }
                     const request =JSON.stringify(complete)
@@ -167,6 +183,7 @@ export class GameManager{
                     team.score += 1;
                 }
             }
+            this.getScore()
         });
     }
     
