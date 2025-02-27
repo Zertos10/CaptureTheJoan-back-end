@@ -1,12 +1,23 @@
-import mqtt from "mqtt";
-import { receiveMessage } from "./receiveMessage";
+import mqtt, { MqttClient } from "mqtt";
+import { initReceiveMessage } from "./receiveMessage";
 export enum MessageType{
     CAPTURE_FLAG = "capture_flag",
-    CONFIG_FLAG = "conf_capture_flag",
-    RESET_FLAG = "reset_flag"
-
+    CONFIG_FLAG = "conf_capture_flag"
 }
-function MQTTManagers(){
+export enum OrderType{
+    CAPTURE="0",ABORTED="1",CONFIRM="2"
+}
+export type CaptureFlag = {
+    teamId: string|number,
+    flagId: string,
+    type: OrderType
+}
+export type ConfigCaptureFlag= {
+    flagId: string
+    teamIds: [string, string][]
+}
+
+function initConnexion():MqttClient{
     console.log("Connection to "+ process.env.MQTT_HOST+":"+process.env.MQTT_PORT || "localhost:8883 ")
     const client_id = `mqtt_${Math.random().toString(16).slice(3)}`
     let client =mqtt.connect(process.env.MQTT_HOST+":"+process.env.MQTT_PORT|| "localhost:8883 ",{
@@ -30,8 +41,8 @@ function MQTTManagers(){
     client.on("error",(err) => {
         console.error(err)
     })
-    receiveMessage(client)
-    
+    initReceiveMessage(client)
+    return client
 }
 
-export default MQTTManagers
+export default initConnexion

@@ -1,44 +1,44 @@
 import { MqttClient } from 'mqtt'
-import { MessageType } from './mqttManager'
+import {  CaptureFlag, MessageType, OrderType } from './mqttManager'
+import gameInstance from '../game/GameManager'
 
-let id_clients: string[] = [] 
-enum OrderType{
-    CAPTURE=0,ABORTED=1,CONFIRM=2
-}
-export type CaptureFlag = {
-    teamId: String,
-    flagId: String,
-    type: OrderType
-}
-export type ConfigCaptureFlag= {
-    teamIds:string[]
-}
-export function receiveMessage(client: MqttClient){
+
+export async function initReceiveMessage (client: MqttClient){
     client.on("message",(topic,message) => {
+        console.log(message.toString())
         if(topic == MessageType.CAPTURE_FLAG){
-            console.log(message.toString())
             try{
                 let messages = JSON.parse(message.toString())
-                console.log(messages)
                 let captureFlags:CaptureFlag = {
                     flagId : messages["flag_id"],
-                    teamId : message["team_id"],
-                    type : message["type"]
+                    teamId : messages["team_id"],
+                    type : messages["type"]
                 }
-                console.log(captureFlags)
-                captureFlag(captureFlags,() => {
-                    client.publish(MessageType.CONFIG_FLAG,"zd")
-                })
+                if(captureFlags.type === OrderType.ABORTED){
+                    console.log("aborted")
+                    gameInstance.abortCapturFlag(captureFlags,(mes) => {
+                        client.publish(MessageType.CAPTURE_FLAG,mes,(log) => {
+                            console.log(log)
+                        })
+                    })
+                }else if(captureFlags.type === OrderType.CAPTURE){
+                    console.log("capture")
+                    gameInstance.captureFlag(captureFlags,(message) => {
+                        client.publish(MessageType.CAPTURE_FLAG,message)
+                    })
+                }
+               
             }catch(err){
                 console.error(err)
             }
         }
-        if(topic = MessageType.CAPTURE_FLAG){
+        if(topic == MessageType.CONFIG_FLAG){
             try{
                 let mes = message.toString()
-                if(!id_clients.includes(mes)){
-                    console.log(mes)
-                    id_clients.push(mes)
+                let parsedMessage = JSON.parse(mes)
+                console.log(parsedMessage)
+                if (parsedMessage.flag_id) {
+                    gameInstance.addFlag(parsedMessage["flag_id"])
                 }
             }catch(e){
                 console.error(e)
@@ -46,6 +46,4 @@ export function receiveMessage(client: MqttClient){
         }
     })
 }
-async function captureFlag(message: CaptureFlag, callback: (payloadMessage:string) => void){
-    callback(JSON.stringify(message))
-}
+
