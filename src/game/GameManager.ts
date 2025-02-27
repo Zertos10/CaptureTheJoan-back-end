@@ -183,20 +183,21 @@ export class GameManager{
                     team.score += 1;
                 }
             }
-            this.getScore()
         });
+        this.getScore()
     }
     
     async abortCapturFlag(message: CaptureFlag,callback: (payloadMessage:string)=> void){
+        console.log("Flag state: "+this.getFlagById(message.flagId)?.flagState)
         if(isInFlags(this.gameData.flags,message.flagId) 
             && this.stateGame == StateGame.PLAY 
-            && this.getFlagById(message.flagId)?.flagState == FlagState.CAPTURED){
+            && this.getFlagById(message.flagId)?.flagState != FlagState.CAPTURED){
             const flag = this.gameData.flags.find((v) => v.id_flag == message.flagId)
             if(flag?.flagState == FlagState.INPROGRESS && flag.refTimeout){
 
                 clearTimeout(flag.refTimeout)
                 flag.refTimeout = undefined
-                callback("payload")
+                console.log("Flag :"+flag.id_flag +" capture is aborted")
             }
         }
     }
