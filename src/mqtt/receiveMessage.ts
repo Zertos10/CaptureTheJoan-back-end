@@ -1,24 +1,33 @@
 import { MqttClient } from 'mqtt'
-import {  CaptureFlag, MessageType } from './mqttManager'
+import {  CaptureFlag, MessageType, OrderType } from './mqttManager'
 import gameInstance from '../game/GameManager'
 
 
 export async function initReceiveMessage (client: MqttClient){
     client.on("message",(topic,message) => {
+        console.log(message.toString())
         if(topic == MessageType.CAPTURE_FLAG){
-            console.log(message.toString())
             try{
                 let messages = JSON.parse(message.toString())
-                console.log(messages)
                 let captureFlags:CaptureFlag = {
                     flagId : messages["flag_id"],
-                    teamId : Number(message["team_id"]),
-                    type : Number(message["type"])
+                    teamId : messages["team_id"],
+                    type : messages["type"]
                 }
-                console.log(captureFlags)
-                gameInstance.captureFlag(captureFlags,() => {
-                    // client.publish(MessageType.CONFIG_FLAG,"zd")
-                })
+                if(captureFlags.type === OrderType.ABORTED){
+                    console.log("aborted")
+                    gameInstance.abortCapturFlag(captureFlags,(mes) => {
+                        client.publish(MessageType.CAPTURE_FLAG,mes,(log) => {
+                            console.log(log)
+                        })
+                    })
+                }else if(captureFlags.type === OrderType.CAPTURE){
+                    console.log("capture")
+                    gameInstance.captureFlag(captureFlags,(message) => {
+                        client.publish(MessageType.CAPTURE_FLAG,message)
+                    })
+                }
+               
             }catch(err){
                 console.error(err)
             }
@@ -26,7 +35,6 @@ export async function initReceiveMessage (client: MqttClient){
         if(topic == MessageType.CONFIG_FLAG){
             try{
                 let mes = message.toString()
-                console.log(mes)
                 let parsedMessage = JSON.parse(mes)
                 console.log(parsedMessage)
                 if (parsedMessage.flag_id) {

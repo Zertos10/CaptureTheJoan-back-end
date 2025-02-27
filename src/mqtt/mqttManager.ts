@@ -1,12 +1,11 @@
 import mqtt, { MqttClient } from "mqtt";
 import { initReceiveMessage } from "./receiveMessage";
-import { StateGame } from "../game/GameManager";
 export enum MessageType{
     CAPTURE_FLAG = "capture_flag",
     CONFIG_FLAG = "conf_capture_flag"
 }
 export enum OrderType{
-    CAPTURE=0,ABORTED=1,CONFIRM=2
+    CAPTURE="0",ABORTED="1",CONFIRM="2"
 }
 export type CaptureFlag = {
     teamId: string|number,

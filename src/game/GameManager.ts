@@ -1,7 +1,7 @@
 import { MqttClient } from "mqtt";
 import { sendConfigGame, sendStartingGame } from "../mqtt/sendMessage";
 import {isHexColor,isInFlags} from "../utils/Utils";
-import initConnexion, { CaptureFlag, ConfigCaptureFlag } from "../mqtt/mqttManager";
+import initConnexion, { CaptureFlag, ConfigCaptureFlag, OrderType } from "../mqtt/mqttManager";
 export enum StateGame{
     INIT,IDLE,PLAY,END
 }
@@ -33,12 +33,13 @@ export type FlagType={
 
 export class GameManager{
     private static instance:GameManager
+    private scoringInterval:NodeJS.Timeout|undefined
     private stateGame:StateGame = StateGame.INIT
     private gameData: GameType = {
         flags: [],
         teams: [],
         config: {
-            capture_cooldown: 1,
+            capture_cooldown: 5,
             time: 0
         }
     }
@@ -52,16 +53,36 @@ export class GameManager{
         return GameManager.instance
     }
     initGame(){
-        this.gameData.client = initConnexion()
+        this.stateGame = StateGame.INIT
+        this.gameData.teams = []
+        this.gameData.flags = []
+        if(!this.gameData.client){
+            this.gameData.client = initConnexion()
+        }
     }
     launchGame(){
+        console.log(`call launch game : lenght flags ${this.gameData.flags.length} teams lenght ${this.gameData.teams.length}`)
         if(this.gameData.flags.length === 0 || this.gameData.teams.length < 2) return false
         if(!this.gameData.client ||this.stateGame != StateGame.INIT) return false
+        console.log("launch game")
         sendStartingGame(this.gameData.client)
         this.stateGame = StateGame.PLAY
+        this.scoringInterval =setInterval(() => {
+            this.scoring()
+        },1000)
     }
-    mainGame(){
 
+    endGame():TeamsType[]{
+        clearInterval(this.scoringInterval)
+        this.stateGame == StateGame.END
+        return []
+    }
+    getScore():Map<string,number>{
+        const scoreMap = new Map<string,number>()
+        this.gameData.teams.forEach(team => {
+            scoreMap.set(team.id_team,team.score)
+        });
+        return scoreMap
     }
     addTeam(id_team:string,color:string){
         if(isHexColor(color) && this.stateGame != StateGame.PLAY){
@@ -79,12 +100,15 @@ export class GameManager{
     }
     addFlag(id_flag:string){
         if(this.stateGame != StateGame.PLAY){
-            if(!this.gameData.flags.find((v) => (v.id_flag == id_flag))) return
-            this.gameData.flags.push({
-                id_flag: id_flag,
-                capture_team : null,
-                flagState : FlagState.NEUTRAL
-            })
+            if(!this.gameData.flags.find((v) => (v.id_flag == id_flag))){
+                console.log("addFlag")
+                this.gameData.flags.push({
+                    id_flag: id_flag,
+                    capture_team : null,
+                    flagState : FlagState.NEUTRAL
+                }) 
+            }
+            
         }
         console.log(this.gameData.teams)
         const teamIds = new Map(this.gameData.teams.map(team => [team.id_team, team.color]));
@@ -109,30 +133,59 @@ export class GameManager{
         }
     }
     async captureFlag(message: CaptureFlag, callback: (payloadMessage:string) => void){
-        if(isInFlags(this.gameData.flags,message.flagId) && this.stateGame == StateGame.PLAY ){
+        if(isInFlags(this.gameData.flags,message.flagId) && this.stateGame == StateGame.PLAY){
             const flag = this.gameData.flags.find((v) => v.id_flag == message.flagId)
             if(!flag) return
+            console.log(`${flag.capture_team} + ${message.teamId}`)
+            console.log(this.gameData.config.capture_cooldown)
             if(flag.capture_team || flag.capture_team != message.teamId){
                 flag.flagState = FlagState.INPROGRESS
                 flag.refTimeout =setTimeout(()=>{
-                    callback("d")
+                    console.log("Flag "+message.flagId+" captured by"+message.teamId)
+                    const complete:CaptureFlag = {
+                        flagId : message.flagId,
+                        teamId : message.teamId,
+                        type : OrderType.CONFIRM
+                    }
+                    const flagIndex = this.gameData.flags.findIndex((v) => v.id_flag == message.flagId);
+                    if (flagIndex !== -1) {
+                        this.gameData.flags[flagIndex].capture_team = complete.teamId
+                        this.gameData.flags[flagIndex].flagState = FlagState.CAPTURED
+                    }
+                    const request =JSON.stringify(complete)
+                    callback(request)
                 },this.gameData.config.capture_cooldown*1000)
-                flag.capture_team = message.teamId;
-                flag.flagState = FlagState.CAPTURED;
 
             }
         }
-        callback(JSON.stringify(message))
     }
+    async scoring() {
+        this.gameData.flags.forEach(flag => {
+            if (flag.capture_team) {
+                const team = this.gameData.teams.find(team => team.id_team === String(flag.capture_team));
+                if (team) {
+                    team.score += 1;
+                }
+            }
+        });
+    }
+    
     async abortCapturFlag(message: CaptureFlag,callback: (payloadMessage:string)=> void){
-        if(isInFlags(this.gameData.flags,message.flagId) && this.stateGame == StateGame.PLAY){
+        if(isInFlags(this.gameData.flags,message.flagId) 
+            && this.stateGame == StateGame.PLAY 
+            && this.getFlagById(message.flagId)?.flagState == FlagState.CAPTURED){
             const flag = this.gameData.flags.find((v) => v.id_flag == message.flagId)
             if(flag?.flagState == FlagState.INPROGRESS && flag.refTimeout){
+
                 clearTimeout(flag.refTimeout)
+                flag.refTimeout = undefined
+                callback("payload")
             }
         }
     }
-    
+    getFlagById(idFlag:string){
+        return this.gameData.flags.find((v) => v.id_flag == idFlag)
+    }
 }
 export default GameManager.getInstance()
 
